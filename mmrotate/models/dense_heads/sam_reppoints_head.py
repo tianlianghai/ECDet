@@ -381,32 +381,45 @@ class SAMRepPointsHead(BaseDenseHead):
 
         distances = torch.zeros_like(angles).reshape(-1)
 
-        angles_index_wh = ((width != 0) & (angles >= 0) &
-                           (angles <= 1.57)).squeeze()
-        angles_index_hw = ((width != 0) & ((angles < 0) |
-                                           (angles > 1.57))).squeeze()
+        # Only compute distances for positive indices to avoid indexing mismatch
+        if len(pos_inds) > 0:
+            pos_rbboxes_center = rbboxes_center[pos_inds]
+            pos_width = width[pos_inds]
+            pos_height = height[pos_inds]
+            pos_angles = angles[pos_inds]
 
-        # 01_la:compution of distance
-        distances[angles_index_wh] = torch.sqrt(
-            (torch.pow(
-                rbboxes_center[angles_index_wh, 0] -
-                points_xy[angles_index_wh, 0], 2) /
-             width[angles_index_wh].squeeze()) +
-            (torch.pow(
-                rbboxes_center[angles_index_wh, 1] -
-                points_xy[angles_index_wh, 1], 2) /
-             height[angles_index_wh].squeeze()))
+            angles_index_wh = ((pos_width != 0) & (pos_angles >= 0) &
+                               (pos_angles <= 1.57)).squeeze()
+            angles_index_hw = ((pos_width != 0) & ((pos_angles < 0) |
+                                                   (pos_angles > 1.57))).squeeze()
 
-        distances[angles_index_hw] = torch.sqrt(
-            (torch.pow(
-                rbboxes_center[angles_index_hw, 0] -
-                points_xy[angles_index_hw, 0], 2) /
-             height[angles_index_hw].squeeze()) +
-            (torch.pow(
-                rbboxes_center[angles_index_hw, 1] -
-                points_xy[angles_index_hw, 1], 2) /
-             width[angles_index_hw].squeeze()))
-        distances[distances == float('nan')] = 0.
+            pos_distances = torch.zeros_like(pos_angles).reshape(-1)
+
+            # 01_la:compution of distance
+            if angles_index_wh.any():
+                pos_distances[angles_index_wh] = torch.sqrt(
+                    (torch.pow(
+                        pos_rbboxes_center[angles_index_wh, 0] -
+                        points_xy[angles_index_wh, 0], 2) /
+                     pos_width[angles_index_wh].squeeze()) +
+                    (torch.pow(
+                        pos_rbboxes_center[angles_index_wh, 1] -
+                        points_xy[angles_index_wh, 1], 2) /
+                     pos_height[angles_index_wh].squeeze()))
+
+            if angles_index_hw.any():
+                pos_distances[angles_index_hw] = torch.sqrt(
+                    (torch.pow(
+                        pos_rbboxes_center[angles_index_hw, 0] -
+                        points_xy[angles_index_hw, 0], 2) /
+                     pos_height[angles_index_hw].squeeze()) +
+                    (torch.pow(
+                        pos_rbboxes_center[angles_index_hw, 1] -
+                        points_xy[angles_index_hw, 1], 2) /
+                     pos_width[angles_index_hw].squeeze()))
+
+            pos_distances[pos_distances == float('nan')] = 0.
+            distances[pos_inds] = pos_distances
 
         sam_weights = label_weights * (torch.exp(1 / (distances + 1)))
         sam_weights[sam_weights == float('inf')] = 0.
